@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f2a4a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="윤독확인">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>정련공정 윤독확인</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0; padding: 0;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  :root {
+    --navy: #0f2a4a;
+    --navy-mid: #1a3a5c;
+    --navy-light: #264d73;
+    --accent: #e8a020;
+    --accent-dim: #c8861a;
+    --bg: #f2f4f7;
+    --card: #ffffff;
+    --text: #1a1f2e;
+    --text-sub: #5a6478;
+    --border: rgba(0,0,0,0.08);
+    --danger: #c0392b;
+    --success: #1a7a4a;
+    --radius: 16px;
+    --radius-sm: 10px;
+  }
+
+  html, body {
+    height: 100%;
+    font-family: 'Noto Sans KR', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  /* ── 캡처/복사 차단 오버레이 ── */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    pointer-events: none;
+  }
+
+  /* ── 화면 컨테이너 ── */
+  #app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── 상태바 ── */
+  .statusbar {
+    background: var(--navy);
+    color: #fff;
+    padding: 12px 18px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    safe-area-inset-top: env(safe-area-inset-top);
+    padding-top: calc(12px + env(safe-area-inset-top));
+  }
+  .statusbar-logo {
+    width: 28px; height: 28px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; color: var(--navy);
+  }
+  .statusbar-title { font-size: 14px; font-weight: 700; letter-spacing: -0.3px; }
+  .statusbar-sub { font-size: 10px; opacity: 0.6; margin-top: 1px; }
+  .gps-pill {
+    margin-left: auto;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    display: flex; align-items: center; gap: 5px;
+    transition: all 0.3s;
+  }
+  .gps-pill.checking { background: rgba(255,255,255,0.15); color: #fff; }
+  .gps-pill.ok       { background: rgba(46,204,113,0.25); color: #7effc0; }
+  .gps-pill.fail     { background: rgba(231,76,60,0.25); color: #ffaaaa; }
+  .gps-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .gps-dot.pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── 공통 화면 ── */
+  .screen {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* ── GPS 게이트 화면 ── */
+  #screen-gps {
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+    background: var(--navy);
+  }
+  .gate-icon {
+    width: 80px; height: 80px;
+    background: rgba(232,160,32,0.15);
+    border: 2px solid rgba(232,160,32,0.3);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px;
+    margin-bottom: 24px;
+    animation: float 3s ease-in-out infinite;
+  }
+  @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+  .gate-title { font-size: 20px; font-weight: 700; color: #fff; text-align: center; margin-bottom: 10px; }
+  .gate-sub { font-size: 13px; color: rgba(255,255,255,0.55); text-align: center; line-height: 1.7; margin-bottom: 28px; }
+  .gate-info-box {
+    width: 100%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+  .gate-info-row {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px; color: rgba(255,255,255,0.7);
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .gate-info-row:last-child { border-bottom: none; }
+  .gate-info-icon { font-size: 16px; width: 20px; text-align: center; }
+  .gate-error {
+    width: 100%;
+    background: rgba(192,57,43,0.2);
+    border: 1px solid rgba(192,57,43,0.4);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: #ffaaaa;
+    line-height: 1.6;
+    text-align: center;
+    display: none;
+  }
+  .btn-primary {
+    width: 100%;
+    background: var(--accent);
+    color: var(--navy);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 15px;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: -0.3px;
+  }
+  .btn-primary:active { transform: scale(0.97); background: var(--accent-dim); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── 폼 화면 ── */
+  #screen-form {
+    background: #fff;
+    position: relative;
+  }
+  #form-iframe {
+    flex: 1;
+    width: 100%;
+    border: none;
+    display: block;
+  }
+
+  /* ── 로딩 오버레이 ── */
+  #loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 10;
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--bg);
+    border-top-color: var(--navy);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 13px; color: var(--text-sub); }
+
+  /* ── 차단 메시지 ── */
+  #block-msg {
+    position: fixed;
+    inset: 0;
+    background: rgba(15,42,74,0.95);
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    color: #fff;
+    text-align: center;
+    padding: 32px;
+  }
+  #block-msg.show { display: flex; }
+  #block-msg .block-icon { font-size: 48px; }
+  #block-msg .block-title { font-size: 18px; font-weight: 700; }
+  #block-msg .block-sub { font-size: 13px; opacity: 0.65; line-height: 1.7; }
+  #block-msg button {
+    margin-top: 8px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff;
+    border-radius: var(--radius-sm);
+    padding: 10px 24px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- 상태바 -->
+  <div class="statusbar">
+    <div class="statusbar-logo">韓</div>
+    <div>
+      <div class="statusbar-title">정련공정 윤독확인</div>
+      <div class="statusbar-sub">한국내화(주)</div>
+    </div>
+    <div class="gps-pill checking" id="gps-pill">
+      <div class="gps-dot pulse" id="gps-dot"></div>
+      <span id="gps-label">위치확인중</span>
+    </div>
+  </div>
+
+  <!-- GPS 게이트 -->
+  <div class="screen active" id="screen-gps">
+    <div class="gate-icon">📍</div>
+    <div class="gate-title">사업장 위치 확인</div>
+    <div class="gate-sub">
+      이 앱은 지정된 사업장 구역 내에서만<br>사용 가능합니다.
+    </div>
+    <div class="gate-info-box">
+      <div class="gate-info-row">
+        <span class="gate-info-icon">🏭</span>
+        <span>대전광역시 대덕구 목상동 100</span>
+      </div>
+      <div class="gate-info-row">
+        <span class="gate-info-icon">📏</span>
+        <span>허용 반경: 사업장 중심 300m 이내</span>
+      </div>
+      <div class="gate-info-row">
+        <span class="gate-info-icon">🔒</span>
+        <span>화면 캡처 및 내용 복사 금지</span>
+      </div>
+      <div class="gate-info-row">
+        <span class="gate-info-icon">📋</span>
+        <span>응답 결과는 자동으로 메일 전송됨</span>
+      </div>
+    </div>
+    <div class="gate-error" id="gate-error"></div>
+    <button class="btn-primary" id="gps-btn" onclick="requestGPS()">
+      📡 위치 권한 허용 후 입장
+    </button>
+  </div>
+
+  <!-- 구글 폼 화면 -->
+  <div class="screen" id="screen-form" style="display:none;flex-direction:column;">
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text">설문 불러오는 중...</div>
+    </div>
+    <iframe
+      id="form-iframe"
+      src="about:blank"
+      title="정련공정 작업 표준 윤독 확인 설문"
+      allow="camera; microphone"
+      sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
+    ></iframe>
+  </div>
+
+</div>
+
+<!-- 캡처/복사 차단 메시지 -->
+<div id="block-msg">
+  <div class="block-icon">🚫</div>
+  <div class="block-title">캡처 및 복사 금지</div>
+  <div class="block-sub">
+    이 앱의 내용은 캡처하거나<br>복사할 수 없습니다.<br>위반 시 보안 정책에 따라 처리됩니다.
+  </div>
+  <button onclick="hideBlock()">확인</button>
+</div>
+
+<script>
+// ── 설정값 ──────────────────────────────────────────
+const CONFIG = {
+  FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSdQFwsz7ggHb77Q5v4L7Ya6nHXmh_dz55r8L-BnU6JhY7SMTA/viewform?embedded=true',
+  TARGET_LAT: 36.3588,
+  TARGET_LNG: 127.4195,
+  RADIUS_M: 300,
+  // DEV_MODE: true 로 설정 시 GPS 체크 우회 (개발/테스트용)
+  DEV_MODE: false
+};
+
+// ── GPS 거리 계산 ────────────────────────────────────
+function calcDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2
+    + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ── GPS 요청 ─────────────────────────────────────────
+function requestGPS() {
+  if (CONFIG.DEV_MODE) { enterApp(); return; }
+
+  const btn = document.getElementById('gps-btn');
+  btn.disabled = true;
+  btn.textContent = '📡 위치 확인 중...';
+  document.getElementById('gate-error').style.display = 'none';
+
+  if (!navigator.geolocation) {
+    showGPSError('이 기기는 GPS를 지원하지 않습니다.');
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const dist = calcDistance(
+        pos.coords.latitude, pos.coords.longitude,
+        CONFIG.TARGET_LAT, CONFIG.TARGET_LNG
+      );
+      if (dist <= CONFIG.RADIUS_M) {
+        setGPSPill('ok', `구역 내 (${Math.round(dist)}m)`);
+        enterApp();
+      } else {
+        setGPSPill('fail', '구역 외부');
+        showGPSError(
+          `⛔ 접근이 거부되었습니다.\n\n현재 위치가 사업장에서 약 ${Math.round(dist)}m 떨어져 있습니다.\n허용 반경(300m) 내에 위치해야 합니다.`
+        );
+      }
+    },
+    (err) => {
+      const msgs = {
+        1: 'GPS 권한이 거부되었습니다.\n스마트폰 설정에서 위치 권한을 허용해 주세요.',
+        2: 'GPS 신호를 찾을 수 없습니다. 잠시 후 다시 시도하세요.',
+        3: 'GPS 응답 시간이 초과되었습니다. 다시 시도해 주세요.'
+      };
+      showGPSError(msgs[err.code] || 'GPS 오류가 발생했습니다.');
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+function showGPSError(msg) {
+  const el = document.getElementById('gate-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+  const btn = document.getElementById('gps-btn');
+  btn.disabled = false;
+  btn.textContent = '📡 다시 시도';
+  setGPSPill('fail', '확인 실패');
+}
+
+function setGPSPill(state, label) {
+  const pill = document.getElementById('gps-pill');
+  const dot = document.getElementById('gps-dot');
+  const lbl = document.getElementById('gps-label');
+  pill.className = 'gps-pill ' + state;
+  dot.className = 'gps-dot' + (state === 'checking' ? ' pulse' : '');
+  lbl.textContent = label;
+}
+
+// ── 앱 진입 ──────────────────────────────────────────
+function enterApp() {
+  // GPS 화면 숨기기
+  document.getElementById('screen-gps').style.display = 'none';
+  // 폼 화면 보이기
+  const formScreen = document.getElementById('screen-form');
+  formScreen.style.display = 'flex';
+
+  // iframe에 구글 폼 로드
+  const iframe = document.getElementById('form-iframe');
+  iframe.src = CONFIG.FORM_URL;
+  iframe.onload = () => {
+    document.getElementById('loading-overlay').style.display = 'none';
+  };
+
+  // 15초 후 로딩 오버레이 강제 제거 (iframe 로드 이벤트 미발생 대비)
+  setTimeout(() => {
+    document.getElementById('loading-overlay').style.display = 'none';
+  }, 15000);
+}
+
+// ── 캡처 / 복사 차단 ─────────────────────────────────
+let blockTimer = null;
+
+function showBlock() {
+  document.getElementById('block-msg').classList.add('show');
+  clearTimeout(blockTimer);
+  blockTimer = setTimeout(hideBlock, 3000);
+}
+function hideBlock() {
+  document.getElementById('block-msg').classList.remove('show');
+}
+
+// 키보드 단축키 차단
+document.addEventListener('keydown', (e) => {
+  const key = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && ['c','s','p','a','u','i'].includes(key)) {
+    e.preventDefault(); showBlock(); return false;
+  }
+  if (key === 'printscreen') { e.preventDefault(); showBlock(); return false; }
+  if (e.key === 'F12') { e.preventDefault(); return false; }
+}, true);
+
+// 우클릭 차단
+document.addEventListener('contextmenu', (e) => { e.preventDefault(); showBlock(); }, true);
+
+// 복사 이벤트 차단
+document.addEventListener('copy', (e) => { e.preventDefault(); showBlock(); }, true);
+document.addEventListener('cut', (e) => { e.preventDefault(); showBlock(); }, true);
+
+// visibilitychange - 백그라운드 전환 시 (캡처 앱 사용 탐지 목적)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    // 폼 화면 진입 후에만 적용
+    const formActive = document.getElementById('screen-form').style.display !== 'none';
+    if (formActive) {
+      document.getElementById('form-iframe').src = 'about:blank';
+      document.getElementById('loading-overlay').style.display = 'flex';
+      // 돌아오면 다시 로드
+      document.addEventListener('visibilitychange', function reload() {
+        if (!document.hidden) {
+          document.removeEventListener('visibilitychange', reload);
+          document.getElementById('form-iframe').src = CONFIG.FORM_URL;
+          setTimeout(() => {
+            document.getElementById('loading-overlay').style.display = 'none';
+          }, 5000);
+        }
+      });
+    }
+  }
+});
+
+// iOS 길게 누르기 차단
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+
+let touchTimer;
+document.addEventListener('touchstart', () => {
+  touchTimer = setTimeout(() => {}, 500);
+}, { passive: true });
+document.addEventListener('touchend', () => clearTimeout(touchTimer), { passive: true });
+
+// Service Worker 등록
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
