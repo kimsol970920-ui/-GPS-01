@@ -136,6 +136,13 @@ body{background:var(--bg);color:var(--text);font-family:'Noto Sans KR',sans-seri
 .spinner{width:44px;height:44px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+.patrol-reminder-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:600;align-items:center;justify-content:center;padding:20px;}
+.patrol-reminder-modal.show{display:flex;}
+.patrol-reminder-box{background:var(--surface);border:1.5px solid var(--accent);border-radius:16px;padding:32px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 0 40px var(--glow);animation:scaleIn 0.4s cubic-bezier(0.34,1.56,0.64,1);}
+.patrol-reminder-icon{font-size:42px;margin-bottom:10px;}
+.patrol-reminder-title{font-size:24px;font-weight:700;margin-bottom:8px;}
+.patrol-reminder-sub{font-size:19px;color:var(--text2);line-height:1.6;margin-bottom:20px;}
+
 .step-screen{display:none;}
 .step-screen.active{display:block;}
 
@@ -643,6 +650,17 @@ body{background:var(--bg);color:var(--text);font-family:'Noto Sans KR',sans-seri
     </div>
   </div>
 
+  <!-- 근무 시작 3시간 경과 · 점검 미제출 알림 모달 -->
+  <div class="patrol-reminder-modal" id="patrolReminderModal">
+    <div class="patrol-reminder-box">
+      <div class="patrol-reminder-icon">⏰</div>
+      <div class="patrol-reminder-title">아직 점검을 제출하지 않았습니다</div>
+      <div class="patrol-reminder-sub">근무 시작 후 3시간이 지났습니다.<br>지금 바로 점검일지를 작성해주세요.</div>
+      <button class="btn btn-primary" onclick="goToPatrolFromReminder()">📋 지금 점검하러 가기</button>
+      <button class="btn btn-ghost" style="margin-top:8px;" onclick="dismissPatrolReminder()">나중에</button>
+    </div>
+  </div>
+
 </div><!-- /page-supervisor -->
 
 <script>
@@ -756,6 +774,7 @@ function enterSupervisorSystem(role, crew, name){
     sessionStorage.removeItem('sv_pending_loc');
     handleQRLocation(pendingLoc);
   }
+  if(role !== 'staff') startPatrolReminderWatcher();
 }
 
 function applyRoleUI(role){
@@ -767,6 +786,9 @@ function logoutSupervisor(){
   sessionStorage.removeItem('sv_logged_in');
   sessionStorage.removeItem('sv_role');
   sessionStorage.removeItem('sv_crew');
+  sessionStorage.removeItem('sv_login_time');
+  sessionStorage.removeItem('sv_reminder_last_shown');
+  stopPatrolReminderWatcher();
   loginTarget = null;
   showPage('landing');
 }
@@ -2477,6 +2499,58 @@ function handleQRLocation(loc){
   if(found) completeQRAuth(found.id);
 }
 
+// ── 근무 시작 3시간 경과 · 점검 미제출 알림 (관리감독자 전용) ──────
+// 컴퓨터/브라우저 탭을 켜놓은 채로 3시간이 지나도 그날 교대 점검을
+// 제출하지 않았다면, 자동으로 점검일지 화면으로 전환하고 알림을 띄웁니다.
+// 이후에도 계속 미제출이면 3시간마다 반복해서 알립니다.
+let patrolReminderTimer = null;
+const PATROL_REMINDER_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3시간
+const PATROL_REMINDER_CHECK_MS    = 5 * 60 * 1000;       // 5분마다 점검
+
+function startPatrolReminderWatcher(){
+  if(!sessionStorage.getItem('sv_login_time')){
+    sessionStorage.setItem('sv_login_time', String(Date.now()));
+  }
+  stopPatrolReminderWatcher();
+  patrolReminderTimer = setInterval(checkPatrolReminder, PATROL_REMINDER_CHECK_MS);
+  checkPatrolReminder(); // 재접속 시 이미 3시간이 지나있을 수 있으므로 즉시 한 번 확인
+}
+
+function stopPatrolReminderWatcher(){
+  if(patrolReminderTimer){ clearInterval(patrolReminderTimer); patrolReminderTimer=null; }
+}
+
+function checkPatrolReminder(){
+  if(state.currentRole === 'staff') return;
+  if(state.submitted) return; // 이미 이번 교대 점검을 제출함
+
+  const loginTime = Number(sessionStorage.getItem('sv_login_time') || 0);
+  if(!loginTime) return;
+  if(Date.now() - loginTime < PATROL_REMINDER_INTERVAL_MS) return;
+
+  const lastShown = Number(sessionStorage.getItem('sv_reminder_last_shown') || 0);
+  if(lastShown && (Date.now() - lastShown) < PATROL_REMINDER_INTERVAL_MS) return;
+
+  showPatrolReminderModal();
+  sessionStorage.setItem('sv_reminder_last_shown', String(Date.now()));
+}
+
+function showPatrolReminderModal(){
+  switchSvTab('patrol');
+  const modal = document.getElementById('patrolReminderModal');
+  if(modal) modal.classList.add('show');
+}
+
+function dismissPatrolReminder(){
+  const modal = document.getElementById('patrolReminderModal');
+  if(modal) modal.classList.remove('show');
+}
+
+function goToPatrolFromReminder(){
+  dismissPatrolReminder();
+  switchSvTab('patrol');
+}
+
 function resetAll(){
   stopQRScan();
   state={shift:null,turn:null,gpsLat:null,gpsLng:null,gpsAccuracy:null,gpsOk:true,
@@ -2486,6 +2560,9 @@ function resetAll(){
     forkliftDetail:{},forkliftLoaded:false,
     currentRole:state.currentRole,currentCrew:state.currentCrew,currentName:state.currentName,
     dashboardCrew:state.dashboardCrew, r5sCrew:state.r5sCrew};
+  // 새 점검 사이클 시작 → 3시간 알림 타이머도 새로 시작
+  sessionStorage.setItem('sv_login_time', String(Date.now()));
+  sessionStorage.removeItem('sv_reminder_last_shown');
   document.getElementById('memoEtc').value='';
   document.querySelectorAll('.opt-btn').forEach(el=>el.classList.remove('selected'));
   document.getElementById('step0Next').disabled=true;
